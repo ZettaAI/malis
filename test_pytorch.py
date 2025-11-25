@@ -12,20 +12,26 @@ def test_pytorch_basic():
     """Test basic PyTorch functionality with MALIS loss."""
     print("Testing PyTorch integration...")
 
-    # Create simple test data
-    seg_true = np.array([0, 1, 1, 1, 2, 2, 0, 5, 5, 5, 5], dtype=np.uint64)
-    neighborhood = np.array([[1]], dtype=np.int32)
+    # Create simple 3D test data (small volume)
+    gt_seg = torch.tensor([
+        [[0, 1, 1],
+         [1, 1, 2],
+         [2, 2, 2]]
+    ], dtype=torch.long)
 
-    # Create affinity data (10 edges between 11 nodes)
-    affs = torch.tensor([0.1, 0.9, 0.95, 0.1, 0.95, 0.1, 0.1, 0.9, 0.95, 0.95],
-                        dtype=torch.float32).reshape(1, -1)
-    gt_affs = torch.tensor([0, 1, 1, 0, 1, 0, 0, 1, 1, 1],
-                           dtype=torch.float32).reshape(1, -1)
-    gt_seg = torch.from_numpy(seg_true)
+    neighborhood = malis.mknhood3d(1)  # 6-connected neighborhood
+    n_edges = len(neighborhood)
+
+    # Create affinity predictions (random)
+    affs = torch.rand(n_edges, 1, 3, 3, requires_grad=True)
+
+    # Create ground truth affinities
+    gt_affs = torch.randint(0, 2, (n_edges, 1, 3, 3)).float()
 
     print(f"Affinity shape: {affs.shape}")
     print(f"Ground truth affinity shape: {gt_affs.shape}")
     print(f"Segmentation shape: {gt_seg.shape}")
+    print(f"Number of edges: {n_edges}")
 
     # Test weights computation
     print("\nComputing MALIS weights...")
@@ -36,16 +42,15 @@ def test_pytorch_basic():
 
     # Test loss computation
     print("\nComputing MALIS loss...")
-    affs_grad = affs.clone().requires_grad_(True)
-    loss = malis.malis_loss_op(affs_grad, gt_affs, gt_seg, neighborhood)
+    loss = malis.malis_loss_op(affs, gt_affs, gt_seg, neighborhood)
     print(f"Loss: {loss.item():.6f}")
     print(f"Loss type: {type(loss)}")
 
     # Test backward pass
     print("\nTesting backward pass...")
     loss.backward()
-    print(f"Gradient shape: {affs_grad.grad.shape}")
-    print(f"Gradient non-zero elements: {torch.count_nonzero(affs_grad.grad).item()}")
+    print(f"Gradient shape: {affs.grad.shape}")
+    print(f"Gradient non-zero elements: {torch.count_nonzero(affs.grad).item()}")
 
     print("\n✓ PyTorch integration test passed!")
     return True
