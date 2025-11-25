@@ -1,8 +1,15 @@
-from setuptools import setup, Extension
-from setuptools.command.build_ext import build_ext as _build_ext
+"""Setup script for the MALIS package.
+
+This script builds the malis package with Cython extensions for efficient
+computation of MALIS loss and related graph operations.
+"""
+
 import os
 import sys
 import sysconfig
+
+from setuptools import Extension, setup
+from setuptools.command.build_ext import build_ext as _build_ext
 
 
 def get_include_dirs():
@@ -35,7 +42,10 @@ def get_library_dirs():
 
 
 class build_ext(_build_ext):
+    """Custom build_ext command that adds numpy include directory."""
+
     def finalize_options(self):
+        """Finalize options, adding numpy include directory."""
         _build_ext.finalize_options(self)
         # Add numpy include directory
         import numpy
@@ -52,15 +62,15 @@ setup(
     cmdclass={'build_ext': build_ext},
     license='MIT',
     install_requires=[
-        'cython>=0.24',
-        'numpy>=1.9',
-        'h5py',
-        'scipy',
+        'cython>=0.29',
+        'numpy>=1.19',
+        'h5py>=3.0',
+        'scipy>=1.5',
     ],
     setup_requires=[
-        'cython>=0.24',
-        'numpy>=1.9',
-        'scipy',
+        'cython>=0.29',
+        'numpy>=1.19',
+        'scipy>=1.5',
     ],
     packages=['malis'],
     ext_modules=[
@@ -71,9 +81,9 @@ setup(
             library_dirs=get_library_dirs(),
             language='c++',
             extra_link_args=["-std=c++11"],
-            extra_compile_args=["-std=c++11", "-w"]
+            extra_compile_args=["-std=c++11", "-w"],
         )
     ],
     zip_safe=False,
-    python_requires='>=3.6',
+    python_requires='>=3.8',
 )
