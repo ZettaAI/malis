@@ -1,13 +1,32 @@
+"""Setup script for building malis Cython extension in-place.
+
+This is a helper script for building the malis extension module directly
+within the malis package directory. For normal installation, use the
+setup.py in the parent directory.
+"""
+
+
 def setup_cython():
-	from distutils.core import setup
-	from distutils.extension import Extension
-	from Cython.Distutils import build_ext
+    """Build the malis Cython extension."""
+    from setuptools import Extension, setup
+    from Cython.Build import cythonize
+    import numpy
 
-	import numpy
+    ext_modules = [
+        Extension(
+            "malis",
+            ["malis.pyx", "malis_cpp.cpp"],
+            language='c++',
+            extra_link_args=["-std=c++11"],
+            extra_compile_args=["-std=c++11", "-w"],
+        )
+    ]
 
-	ext_modules = [Extension("malis", ["malis.pyx", "malis_cpp.cpp"], language='c++',extra_link_args=["-std=c++11"],
-                         extra_compile_args=["-std=c++11", "-w"])]
+    setup(
+        ext_modules=cythonize(ext_modules),
+        include_dirs=[numpy.get_include()],
+    )
 
-	setup(cmdclass = {'build_ext': build_ext}, include_dirs=[numpy.get_include()], ext_modules = ext_modules)
-if __name__=='__main__':
-	setup_cython()
+
+if __name__ == '__main__':
+    setup_cython()

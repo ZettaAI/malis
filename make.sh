@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-cd malis
-python setup.py build_ext --inplace
+# Build malis package using pip with PEP 517
+pip install -e . --use-pep517
 printf "BUILD COMPLETE\n"
-cd ..

@@ -1,0 +1,28 @@
+[build-system]
+requires = [
+    "setuptools>=45",
+    "wheel",
+    "Cython>=0.29",
+    "numpy>=1.19",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "malis"
+version = "1.0"
+description = "MALIS segmentation loss function"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "Srinivas Turaga", email = "turagas@janelia.hhmi.org"},
+]
+dependencies = [
+    "cython>=0.29",
+    "numpy>=1.19",
+    "h5py>=3.0",
+    "scipy>=1.5",
+]
+
+[project.urls]
+Homepage = "https://github.com/TuragaLab/malis"

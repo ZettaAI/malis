@@ -1,51 +1,89 @@
-from distutils.sysconfig import get_config_vars, get_config_var, get_python_inc
-from setuptools import setup, Extension
-from setuptools.command.build_ext import build_ext as _build_ext
+"""Setup script for the MALIS package.
+
+This script builds the malis package with Cython extensions for efficient
+computation of MALIS loss and related graph operations.
+"""
+
 import os
+import sys
+import sysconfig
+
+from setuptools import Extension, setup
+from setuptools.command.build_ext import build_ext as _build_ext
 
 
-include_dirs = [
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "malis"),
-    os.path.dirname(get_python_inc()),
-    get_python_inc()
-]
-library_dirs = [
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "malis"),
-    get_config_var("LIBDIR")
-]
+def get_include_dirs():
+    """Get include directories for building C extensions."""
+    include_dirs = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "malis"),
+    ]
 
-# Remove the "-Wstrict-prototypes" compiler option, which isn't valid for C++.
-cfg_vars = get_config_vars()
-if "CFLAGS" in cfg_vars:
-    cfg_vars["CFLAGS"] = cfg_vars["CFLAGS"].replace("-Wstrict-prototypes", "")
+    # Add Python include directories
+    python_inc = sysconfig.get_path('include')
+    if python_inc:
+        include_dirs.append(python_inc)
+        include_dirs.append(os.path.dirname(python_inc))
+
+    return include_dirs
+
+
+def get_library_dirs():
+    """Get library directories for building C extensions."""
+    library_dirs = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "malis"),
+    ]
+
+    # Add system library directory
+    libdir = sysconfig.get_config_var("LIBDIR")
+    if libdir:
+        library_dirs.append(libdir)
+
+    return library_dirs
+
 
 class build_ext(_build_ext):
+    """Custom build_ext command that adds numpy include directory."""
+
     def finalize_options(self):
+        """Finalize options, adding numpy include directory."""
         _build_ext.finalize_options(self)
-        # Prevent numpy from thinking it is still in its setup process:
-        __builtins__.__NUMPY_SETUP__ = False
+        # Add numpy include directory
         import numpy
         self.include_dirs.append(numpy.get_include())
 
-setup(name='malis',
-      version='1.0',
-      description='MALIS segmentation loss function',
-      url='https://github.com/TuragaLab/malis',
-      author='Srinivas Turaga',
-      author_email='turagas@janelia.hhmi.org',
-	  cmdclass=dict(
-            build_ext=build_ext
-    	),
-      license='MIT',
-      install_requires=['cython','numpy','h5py','scipy'],	
-	  setup_requires=['cython','numpy','scipy'],	
-      packages=['malis'],
-         ext_modules = [Extension("malis.malis",
-                         ["malis/malis.pyx", "malis/malis_cpp.cpp"],
-                         include_dirs=include_dirs,
-                         library_dirs=library_dirs,
-                         language='c++',
-                         # std= 'c++11',
-                         extra_link_args=["-std=c++11"],
-                         extra_compile_args=["-std=c++11", "-w"])],
-      zip_safe=False)
+
+setup(
+    name='malis',
+    version='1.0',
+    description='MALIS segmentation loss function',
+    url='https://github.com/TuragaLab/malis',
+    author='Srinivas Turaga',
+    author_email='turagas@janelia.hhmi.org',
+    cmdclass={'build_ext': build_ext},
+    license='MIT',
+    install_requires=[
+        'cython>=0.29',
+        'numpy>=1.19',
+        'h5py>=3.0',
+        'scipy>=1.5',
+    ],
+    setup_requires=[
+        'cython>=0.29',
+        'numpy>=1.19',
+        'scipy>=1.5',
+    ],
+    packages=['malis'],
+    ext_modules=[
+        Extension(
+            "malis.malis",
+            ["malis/malis.pyx", "malis/malis_cpp.cpp"],
+            include_dirs=get_include_dirs(),
+            library_dirs=get_library_dirs(),
+            language='c++',
+            extra_link_args=["-std=c++11"],
+            extra_compile_args=["-std=c++11", "-w"],
+        )
+    ],
+    zip_safe=False,
+    python_requires='>=3.8',
+)
