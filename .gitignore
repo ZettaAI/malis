@@ -1,6 +1,18 @@
-build
-*egg*
-dist
+# Build artifacts
+build/
+dist/
+*.egg*
 *.pyc
+
+# Cython generated files
 malis/malis.cpp
+malis/malis.c
 malis/malis.so
+malis/malis.*.so
+malis/malis.pyd
+
+# Python cache
+__pycache__/
+
+# Misc
+*.egg-info/
