@@ -66,6 +66,7 @@ setup(
         'numpy>=1.19',
         'h5py>=3.0',
         'scipy>=1.5',
+        'torch>=1.9.0',
     ],
     setup_requires=[
         'cython>=0.29',

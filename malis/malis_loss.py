@@ -1,10 +1,6 @@
-"""TensorFlow operations for computing MALIS loss weights."""
+"""PyTorch operations for computing MALIS loss weights."""
 
-try:
-    import tensorflow as tf
-except ImportError:
-    tf = None
-
+import torch
 import numpy as np
 
 from .malis import malis_loss_weights, nodelist_like
@@ -37,15 +33,30 @@ class MalisWeights:
         """Compute MALIS edge weights by combining positive and negative passes.
 
         Args:
-            affs: Predicted affinities (n_edges, z, y, x).
-            gt_affs: Ground-truth affinities (n_edges, z, y, x).
-            gt_seg: Ground-truth segmentation (z, y, x).
-            gt_aff_mask: Binary mask for known affinities (n_edges, z, y, x).
-            gt_seg_unlabelled: Binary mask for unlabelled regions (z, y, x).
+            affs: Predicted affinities (n_edges, z, y, x) - torch.Tensor or numpy array.
+            gt_affs: Ground-truth affinities (n_edges, z, y, x) - torch.Tensor or numpy array.
+            gt_seg: Ground-truth segmentation (z, y, x) - torch.Tensor or numpy array.
+            gt_aff_mask: Binary mask for known affinities (n_edges, z, y, x) - torch.Tensor or numpy array.
+            gt_seg_unlabelled: Binary mask for unlabelled regions (z, y, x) - torch.Tensor or numpy array.
 
         Returns:
-            Combined edge weights from positive and negative passes.
+            Combined edge weights from positive and negative passes as numpy array.
         """
+        # Convert tensors to numpy if needed
+        if isinstance(affs, torch.Tensor):
+            affs = affs.detach().cpu().numpy()
+        if isinstance(gt_affs, torch.Tensor):
+            gt_affs = gt_affs.detach().cpu().numpy()
+        if isinstance(gt_seg, torch.Tensor):
+            gt_seg = gt_seg.detach().cpu().numpy()
+        if isinstance(gt_aff_mask, torch.Tensor):
+            gt_aff_mask = gt_aff_mask.detach().cpu().numpy()
+        if isinstance(gt_seg_unlabelled, torch.Tensor):
+            gt_seg_unlabelled = gt_seg_unlabelled.detach().cpu().numpy()
+
+        # Make a copy to avoid modifying the original
+        gt_seg = np.copy(gt_seg)
+
         # Replace the unlabelled-object area with a new unique ID
         if gt_seg_unlabelled.size > 0:
             gt_seg[gt_seg_unlabelled == 0] = gt_seg.max() + 1
@@ -110,6 +121,70 @@ class MalisWeights:
 
         return weights
 
+class MalisWeightsFunction(torch.autograd.Function):
+    """PyTorch autograd function for computing MALIS loss weights.
+
+    This function wraps the MALIS weight computation to work seamlessly
+    with PyTorch's autograd system.
+    """
+
+    @staticmethod
+    def forward(ctx, affs, gt_affs, gt_seg, neighborhood, gt_aff_mask=None, gt_seg_unlabelled=None):
+        """Forward pass: compute MALIS weights.
+
+        Args:
+            ctx: Context object for saving information for backward pass.
+            affs: The predicted affinities (torch.Tensor).
+            gt_affs: The ground-truth affinities (torch.Tensor).
+            gt_seg: The ground-truth segmentation (torch.Tensor).
+            neighborhood: Array of spatial offsets defining edge connectivity.
+            gt_aff_mask: Binary mask for known affinities (optional torch.Tensor).
+            gt_seg_unlabelled: Binary mask for unlabelled regions (optional torch.Tensor).
+
+        Returns:
+            torch.Tensor with MALIS weights for each edge.
+        """
+        # Get output shape from gt_seg
+        output_shape = gt_seg.shape
+
+        # Initialize MalisWeights
+        malis_weights_obj = MalisWeights(output_shape, neighborhood)
+
+        # Handle optional masks
+        if gt_aff_mask is None:
+            gt_aff_mask = torch.zeros((0,), dtype=affs.dtype, device=affs.device)
+        if gt_seg_unlabelled is None:
+            gt_seg_unlabelled = torch.zeros((0,), dtype=gt_seg.dtype, device=gt_seg.device)
+
+        # Compute weights (converts to numpy internally)
+        weights_np = malis_weights_obj.get_edge_weights(
+            affs, gt_affs, gt_seg, gt_aff_mask, gt_seg_unlabelled
+        )
+
+        # Convert back to torch tensor
+        weights = torch.from_numpy(weights_np).to(affs.device)
+
+        # Save for backward
+        ctx.save_for_backward(weights)
+
+        return weights
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        """Backward pass: weights are constant, so gradient flows through unchanged.
+
+        Args:
+            ctx: Context object with saved tensors.
+            grad_output: Gradient with respect to output.
+
+        Returns:
+            Gradients for each input (None for non-differentiable inputs).
+        """
+        # MALIS weights don't depend on affs in a differentiable way
+        # The gradient flows through the loss computation, not the weights
+        return grad_output, None, None, None, None, None
+
+
 def malis_weights_op(
     affs,
     gt_affs,
@@ -119,23 +194,23 @@ def malis_weights_op(
     gt_seg_unlabelled=None,
     name=None,
 ):
-    """Return a TensorFlow op to compute the MALIS loss weights.
+    """Return a PyTorch operation to compute the MALIS loss weights.
 
     This is to be multiplied with an edge-wise base loss and summed up to create
     the final loss. For the Euclidean loss, use ``malis_loss_op``.
 
     Args:
-        affs: The predicted affinities (Tensor).
-        gt_affs: The ground-truth affinities (Tensor).
+        affs: The predicted affinities (torch.Tensor).
+        gt_affs: The ground-truth affinities (torch.Tensor).
         gt_seg: The corresponding segmentation to the ground-truth affinities
-            (Tensor). Label 0 denotes background.
+            (torch.Tensor). Label 0 denotes background.
         neighborhood: A list of spatial offsets, defining the neighborhood for
-            each voxel (Tensor).
+            each voxel (numpy array or list).
         gt_aff_mask: A binary mask indicating where ground-truth affinities are
             known (known = 1, unknown = 0). This is to be used for sparsely
             labelled ground-truth. Edges with unknown affinities will not be
             constrained in the two MALIS passes, and will not contribute to the
-            loss. Optional (Tensor).
+            loss. Optional (torch.Tensor).
         gt_seg_unlabelled: A binary mask indicating where the ground-truth
             contains unlabelled objects (labelled = 1, unlabelled = 0). This is
             to be used for ground-truth where only some objects have been
@@ -144,49 +219,16 @@ def malis_weights_op(
             i.e., the boundary is a real object boundary. Ground-truth
             affinities within the unlabelled areas should be masked out in
             ``gt_aff_mask``. Ground-truth affinities between labelled and
-            unlabelled areas should be zero in ``gt_affs``. Optional (Tensor).
-        name: A name to use for the operators created. Optional.
+            unlabelled areas should be zero in ``gt_affs``. Optional (torch.Tensor).
+        name: A name to use for the operators created. Optional (unused in PyTorch).
 
     Returns:
-        A tensor with the shape of ``affs``, with MALIS weights stored for each
+        A torch.Tensor with the shape of ``affs``, with MALIS weights stored for each
         edge.
     """
-
-    if gt_aff_mask is None:
-        gt_aff_mask = tf.zeros((0,))
-    if gt_seg_unlabelled is None:
-        gt_seg_unlabelled = tf.zeros((0,))
-
-    output_shape = gt_seg.get_shape().as_list()
-
-    malis_weights = MalisWeights(output_shape, neighborhood)
-
-    def malis_functor(affs, gt_affs, gt_seg, gt_aff_mask, gt_seg_unlabelled):
-        return malis_weights.get_edge_weights(
-            affs, gt_affs, gt_seg, gt_aff_mask, gt_seg_unlabelled
-        )
-
-    # Use tf.py_function for TensorFlow 2.x compatibility (replaces deprecated tf.py_func)
-    try:
-        # TensorFlow 2.x
-        weights = tf.py_function(
-            malis_functor,
-            [affs, gt_affs, gt_seg, gt_aff_mask, gt_seg_unlabelled],
-            tf.float32,
-            name=name,
-        )
-        weights.set_shape(affs.shape)
-    except AttributeError:
-        # TensorFlow 1.x fallback
-        weights = tf.py_func(
-            malis_functor,
-            [affs, gt_affs, gt_seg, gt_aff_mask, gt_seg_unlabelled],
-            [tf.float32],
-            name=name,
-        )
-        weights = weights[0]
-
-    return weights
+    return MalisWeightsFunction.apply(
+        affs, gt_affs, gt_seg, neighborhood, gt_aff_mask, gt_seg_unlabelled
+    )
 
 def malis_loss_op(
     affs,
@@ -197,7 +239,7 @@ def malis_loss_op(
     gt_seg_unlabelled=None,
     name=None,
 ):
-    """Return a TensorFlow op to compute the constrained MALIS loss.
+    """Return a PyTorch operation to compute the constrained MALIS loss.
 
     Uses the squared distance to the target values for each edge as base loss.
 
@@ -226,17 +268,17 @@ def malis_loss_op(
     all edges that have both nodes inside the "unlabelled objects" area.
 
     Args:
-        affs: The predicted affinities (Tensor).
-        gt_affs: The ground-truth affinities (Tensor).
+        affs: The predicted affinities (torch.Tensor).
+        gt_affs: The ground-truth affinities (torch.Tensor).
         gt_seg: The corresponding segmentation to the ground-truth affinities
-            (Tensor). Label 0 denotes background.
+            (torch.Tensor). Label 0 denotes background.
         neighborhood: A list of spatial offsets, defining the neighborhood for
-            each voxel (Tensor).
+            each voxel (numpy array or list).
         gt_aff_mask: A binary mask indicating where ground-truth affinities are
             known (known = 1, unknown = 0). This is to be used for sparsely
             labelled ground-truth and at the borders of labelled areas. Edges
             with unknown affinities will not be constrained in the two MALIS
-            passes, and will not contribute to the loss. Optional (Tensor).
+            passes, and will not contribute to the loss. Optional (torch.Tensor).
         gt_seg_unlabelled: A binary mask indicating where the ground-truth
             contains unlabelled objects (labelled = 1, unlabelled = 0). This is
             to be used for ground-truth where only some objects have been
@@ -245,11 +287,11 @@ def malis_loss_op(
             i.e., the boundary is a real object boundary. Ground-truth
             affinities within the unlabelled areas should be masked out in
             ``gt_aff_mask``. Ground-truth affinities between labelled and
-            unlabelled areas should be zero in ``gt_affs``. Optional (Tensor).
-        name: A name to use for the operators created. Optional.
+            unlabelled areas should be zero in ``gt_affs``. Optional (torch.Tensor).
+        name: A name to use for the operators created. Optional (unused in PyTorch).
 
     Returns:
-        A tensor with one element, the MALIS loss.
+        A torch.Tensor with one element, the MALIS loss.
     """
 
     weights = malis_weights_op(
@@ -261,6 +303,6 @@ def malis_loss_op(
         gt_seg_unlabelled,
         name,
     )
-    edge_loss = tf.square(gt_affs - affs)
+    edge_loss = torch.square(gt_affs - affs)
 
-    return tf.reduce_sum(tf.multiply(weights, edge_loss))
+    return torch.sum(weights * edge_loss)
