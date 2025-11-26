@@ -19,6 +19,7 @@ from .malis import (
     prune_and_renum,
     rand_index,
     seg_to_affgraph,
+    segmask_to_affmask,
 )
 from .malis_loss import malis_loss_op, malis_weights_op, MalisWeights
 
@@ -30,6 +31,7 @@ __all__ = [
     "MalisWeights",
     # Affinity graph functions
     "seg_to_affgraph",
+    "segmask_to_affmask",
     "bmap_to_affgraph",
     "nodelist_like",
     # Connected components functions

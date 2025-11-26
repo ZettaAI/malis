@@ -256,6 +256,39 @@ def seg_to_affgraph(seg, nhood):
 
     return aff
 
+def segmask_to_affmask(mask, nhood):
+    """Construct an affinity mask from a binary segmentation mask.
+
+    Args:
+        mask: Binary mask with shape (z, y, x).
+        nhood: Neighborhood offsets with shape (n_edges, 3).
+
+    Returns:
+        Affinity mask with shape (n_edges, z, y, x), where each edge is 1
+        if both voxels are non-zero in the mask, 0 otherwise.
+    """
+    # Assume affinity mask is represented as:
+    # shape = (e, z, y, x)
+    # nhood.shape = (edges, 3)
+    shape = mask.shape
+    nEdge = nhood.shape[0]
+    aff = np.zeros((nEdge,) + shape, dtype=np.int32)
+
+    for e in range(nEdge):
+        aff[e,
+            max(0, -nhood[e, 0]):min(shape[0], shape[0] - nhood[e, 0]),
+            max(0, -nhood[e, 1]):min(shape[1], shape[1] - nhood[e, 1]),
+            max(0, -nhood[e, 2]):min(shape[2], shape[2] - nhood[e, 2])] = (
+                (mask[max(0, -nhood[e, 0]):min(shape[0], shape[0] - nhood[e, 0]),
+                      max(0, -nhood[e, 1]):min(shape[1], shape[1] - nhood[e, 1]),
+                      max(0, -nhood[e, 2]):min(shape[2], shape[2] - nhood[e, 2])] > 0) *
+                (mask[max(0, nhood[e, 0]):min(shape[0], shape[0] + nhood[e, 0]),
+                      max(0, nhood[e, 1]):min(shape[1], shape[1] + nhood[e, 1]),
+                      max(0, nhood[e, 2]):min(shape[2], shape[2] + nhood[e, 2])] > 0)
+            )
+
+    return aff
+
 def nodelist_like(shape, nhood):
     """Construct node lists for edge list representation of an affinity graph.
 
